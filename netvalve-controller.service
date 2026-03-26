@@ -1,0 +1,13 @@
+[Unit]
+Description=NetValve Controller Service
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/env dotnet /usr/local/bin/netvalve/NetValve.Server.dll
+User=root
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

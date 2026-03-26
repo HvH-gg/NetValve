@@ -1,0 +1,30 @@
+{
+  "NetworkInterface": "eth0",
+  "IfbDevice": "ifb0",
+  "UpdateIntervalSeconds": 10,
+  "Ingest": {
+    "BindAddress": "0.0.0.0",
+    "Port": 8443,
+    "UseHttps": false,
+    "CertificatePath": null,
+    "CertificatePassword": null,
+    "SnapshotTtlSeconds": 20,
+    "Servers": [
+      {
+        "ServerId": "server-1",
+        "Token": "secret-token-1",
+        "Port": 27015
+      },
+      {
+        "ServerId": "server-2",
+        "Token": "secret-token-2",
+        "Port": 27016
+      },
+      {
+        "ServerId": "server-3",
+        "Token": "secret-token-3",
+        "Port": 27017
+      }
+    ]
+  }
+}

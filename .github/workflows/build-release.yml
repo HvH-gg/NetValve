@@ -1,0 +1,118 @@
+name: Build and Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+      - '*.*.*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to build (1.2.3 or v1.2.3)'
+        required: true
+        default: '0.1.0'
+
+env:
+  DOTNET_VERSION: '8.0.x'
+  DEFAULT_VERSION: '0.1.0'
+
+jobs:
+  build-release:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.VERSION }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Determine version
+        id: version
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            RAW_VERSION="${{ github.event.inputs.version }}"
+          else
+            RAW_VERSION="${GITHUB_REF_NAME}"
+          fi
+
+          echo "VERSION=${RAW_VERSION#v}" >> $GITHUB_OUTPUT
+
+      - name: Publish NetValve.Server
+        run: |
+          VERSION="${{ steps.version.outputs.VERSION }}"
+          dotnet publish NetValve.Server/NetValve.Server.csproj -c Release -r linux-x64 --self-contained false -o release/publish -p:Version=$VERSION -p:AssemblyVersion=$VERSION -p:FileVersion=$VERSION -p:DebugSymbols=false -p:DebugType=None
+
+      - name: Create server release archive
+        run: |
+          cp install.sh release/publish/
+          cp netvalve-controller.service release/publish/
+          tar -czf netvalve-${{ steps.version.outputs.VERSION }}-linux-x64.tar.gz -C release/publish --owner=0 --group=0 .
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        if: startsWith(github.ref, 'refs/tags/')
+        with:
+          files: netvalve-${{ steps.version.outputs.VERSION }}-linux-x64.tar.gz
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: netvalve-${{ steps.version.outputs.VERSION }}-linux-x64
+          path: netvalve-${{ steps.version.outputs.VERSION }}-linux-x64.tar.gz
+
+  build-plugin:
+    runs-on: ubuntu-latest
+    needs: build-release
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Restore NetValve.Plugin
+        run: dotnet restore NetValve.Plugin/NetValve.Plugin.csproj
+
+      - name: Build NetValve.Plugin
+        run: |
+          VERSION="${{ needs.build-release.outputs.version }}"
+          dotnet build NetValve.Plugin/NetValve.Plugin.csproj -c Release --no-restore /p:Version=$VERSION /p:AssemblyVersion=$VERSION /p:FileVersion=$VERSION
+
+      - name: Create plugin directory structure
+        run: |
+          mkdir -p release/addons/counterstrikesharp/plugins/NetValve/Config
+          mkdir -p release/addons/counterstrikesharp/configs/plugins/NetValve
+          mkdir -p release/addons/counterstrikesharp/gamedata
+          cp -r NetValve.Plugin/bin/Release/net8.0/* release/addons/counterstrikesharp/plugins/NetValve/
+
+      - name: Create plugin config example
+        run: |
+          echo '{"ControllerUrl":"wss://controller:8443/ws","AuthToken":"your-auth-token","ServerId":"server-1","HttpFallbackUrl":null,"EnableHttpFallback":true,"QueueSize":10,"ConfigVersion":1}' > release/addons/counterstrikesharp/configs/plugins/NetValve/NetValve.json
+
+      - name: Create plugin ZIP
+        run: |
+          cd release
+          zip -r ../NetValve.Plugin-${{ needs.build-release.outputs.version }}.zip addons
+
+      - name: Upload plugin to release
+        uses: softprops/action-gh-release@v1
+        if: startsWith(github.ref, 'refs/tags/')
+        with:
+          files: NetValve.Plugin-${{ needs.build-release.outputs.version }}.zip
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: NetValve.Plugin-${{ needs.build-release.outputs.version }}
+          path: NetValve.Plugin-${{ needs.build-release.outputs.version }}.zip

@@ -1,0 +1,9 @@
+{
+  "ControllerUrl": "wss://controller:8443/ws",
+  "AuthToken": "your-auth-token",
+  "ServerId": "server-1",
+  "HttpFallbackUrl": null,
+  "EnableHttpFallback": true,
+  "QueueSize": 10,
+  "ConfigVersion": 1
+}

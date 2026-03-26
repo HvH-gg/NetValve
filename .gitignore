@@ -1,0 +1,9 @@
+NetValve.Plugin/.idea
+NetValve.Plugin/bin
+NetValve.Plugin/obj
+.idea
+NetValve.Server/bin
+NetValve.Server/obj
+NetValve.Core/obj
+NetValve.Core/bin
+*.user
