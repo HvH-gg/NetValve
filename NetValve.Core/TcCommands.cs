@@ -37,12 +37,16 @@ public class TcCommands
             new CommandSpec("modprobe", ["ifb"]),
             new CommandSpec("ip", ["link", "add", ifb, "type", "ifb"], IsAlreadyExistsError),
             new CommandSpec("ip", ["link", "set", "dev", ifb, "up"]),
-            new CommandSpec("tc", ["qdisc", "replace", "dev", dev, "root", "handle", "1:", "htb", "default", "1"]),
+            new CommandSpec("tc", ["qdisc", "del", "dev", dev, "ingress"], IsIgnorableDeleteError),
+            new CommandSpec("tc", ["qdisc", "del", "dev", dev, "root"], IsIgnorableDeleteError),
+            new CommandSpec("tc", ["qdisc", "del", "dev", ifb, "root"], IsIgnorableDeleteError),
+            new CommandSpec("tc", ["qdisc", "add", "dev", dev, "root", "handle", "1:", "htb", "default", "1"]),
             new CommandSpec("tc", ["class", "replace", "dev", dev, "parent", "1:", "classid", "1:1", "htb", "rate", "1gbit", "ceil", "1gbit"]),
-            new CommandSpec("tc", ["qdisc", "replace", "dev", ifb, "root", "handle", "2:", "htb", "default", "1"]),
+            new CommandSpec("tc", ["qdisc", "add", "dev", ifb, "root", "handle", "2:", "htb", "default", "1"]),
             new CommandSpec("tc", ["class", "replace", "dev", ifb, "parent", "2:", "classid", "2:1", "htb", "rate", "1gbit", "ceil", "1gbit"]),
-            new CommandSpec("tc", ["qdisc", "add", "dev", dev, "handle", "ffff:", "ingress"], IsAlreadyExistsError),
-            new CommandSpec("tc", ["filter", "replace", "dev", dev, "parent", "ffff:", "protocol", "ip", "prio", "1", "flower", "ip_proto", "udp", "action", "mirred", "egress", "redirect", "dev", ifb])
+            new CommandSpec("tc", ["qdisc", "add", "dev", dev, "ingress"]),
+            new CommandSpec("tc", ["filter", "del", "dev", dev, "parent", "ffff:", "protocol", "ip", "pref", "1", "handle", "1", "flower"], IsIgnorableDeleteError),
+            new CommandSpec("tc", ["filter", "add", "dev", dev, "parent", "ffff:", "protocol", "ip", "pref", "1", "handle", "1", "flower", "skip_hw", "ip_proto", "udp", "action", "mirred", "egress", "redirect", "dev", ifb])
         };
 
         var success = await ExecuteCommandsAsync(cmds, ct);
@@ -73,15 +77,16 @@ public class TcCommands
         }
 
         var minor = GetMinorId(normalizedIp, port);
+        var filterHandle = minor.ToString();
 
         var cmds = new[]
         {
             new CommandSpec("tc", ["class", "replace", "dev", dev, "parent", "1:1", "classid", $"1:{minor:x}", "htb", "rate", "1gbit", "ceil", "1gbit"]),
             new CommandSpec("tc", ["qdisc", "replace", "dev", dev, "parent", $"1:{minor:x}", "handle", $"{minor:x}:", "netem", "delay", $"{delayMs}ms"]),
-            new CommandSpec("tc", ["filter", "replace", "dev", dev, "protocol", "ip", "parent", "1:", "prio", "10", "flower", "dst_ip", normalizedIp, "ip_proto", "udp", "dst_port", port.ToString(), "flowid", $"1:{minor:x}"]),
+            new CommandSpec("tc", ["filter", "replace", "dev", dev, "protocol", "ip", "parent", "1:", "pref", "10", "handle", filterHandle, "flower", "skip_hw", "dst_ip", normalizedIp, "ip_proto", "udp", "dst_port", port.ToString(), "flowid", $"1:{minor:x}"]),
             new CommandSpec("tc", ["class", "replace", "dev", ifb, "parent", "2:1", "classid", $"2:{minor:x}", "htb", "rate", "1gbit", "ceil", "1gbit"]),
             new CommandSpec("tc", ["qdisc", "replace", "dev", ifb, "parent", $"2:{minor:x}", "handle", $"{minor:x}:", "netem", "delay", $"{delayMs}ms"]),
-            new CommandSpec("tc", ["filter", "replace", "dev", ifb, "protocol", "ip", "parent", "2:", "prio", "10", "flower", "src_ip", normalizedIp, "ip_proto", "udp", "dst_port", port.ToString(), "flowid", $"2:{minor:x}"])
+            new CommandSpec("tc", ["filter", "replace", "dev", ifb, "protocol", "ip", "parent", "2:", "pref", "10", "handle", filterHandle, "flower", "skip_hw", "src_ip", normalizedIp, "ip_proto", "udp", "dst_port", port.ToString(), "flowid", $"2:{minor:x}"])
         };
 
         return await ExecuteCommandsAsync(cmds, ct);
@@ -96,13 +101,14 @@ public class TcCommands
             return false;
 
         var minor = GetMinorId(normalizedIp, port);
+        var filterHandle = minor.ToString();
 
         var cmds = new[]
         {
-            new CommandSpec("tc", ["filter", "del", "dev", dev, "parent", "1:", "protocol", "ip", "flower", "dst_ip", normalizedIp, "ip_proto", "udp", "dst_port", port.ToString()], IsIgnorableDeleteError),
+            new CommandSpec("tc", ["filter", "del", "dev", dev, "parent", "1:", "protocol", "ip", "pref", "10", "handle", filterHandle, "flower"], IsIgnorableDeleteError),
             new CommandSpec("tc", ["qdisc", "del", "dev", dev, "parent", $"1:{minor:x}"], IsIgnorableDeleteError),
             new CommandSpec("tc", ["class", "del", "dev", dev, "classid", $"1:{minor:x}"], IsIgnorableDeleteError),
-            new CommandSpec("tc", ["filter", "del", "dev", ifb, "parent", "2:", "protocol", "ip", "flower", "src_ip", normalizedIp, "ip_proto", "udp", "dst_port", port.ToString()], IsIgnorableDeleteError),
+            new CommandSpec("tc", ["filter", "del", "dev", ifb, "parent", "2:", "protocol", "ip", "pref", "10", "handle", filterHandle, "flower"], IsIgnorableDeleteError),
             new CommandSpec("tc", ["qdisc", "del", "dev", ifb, "parent", $"2:{minor:x}"], IsIgnorableDeleteError),
             new CommandSpec("tc", ["class", "del", "dev", ifb, "classid", $"2:{minor:x}"], IsIgnorableDeleteError)
         };
@@ -220,6 +226,8 @@ public class TcCommands
                || stderr.Contains("Cannot find device", StringComparison.OrdinalIgnoreCase)
                || stderr.Contains("Parent Qdisc doesn't exists", StringComparison.OrdinalIgnoreCase)
                || stderr.Contains("Failed to find specified qdisc", StringComparison.OrdinalIgnoreCase)
+               || stderr.Contains("Cannot delete qdisc with handle of zero", StringComparison.OrdinalIgnoreCase)
+               || stderr.Contains("Cannot flush filters with protocol, handle or kind set", StringComparison.OrdinalIgnoreCase)
                || stderr.Contains("Cannot find specified filter chain", StringComparison.OrdinalIgnoreCase);
     }
 
