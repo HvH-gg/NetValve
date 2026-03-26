@@ -29,11 +29,17 @@ public class LatencyController
 
             // Skip servers with no target (disabled/shaping off)
             if (configuredTarget == 0)
+            {
+                await RemoveServerShapingAsync(port, "target disabled", ct);
                 continue;
+            }
 
             var effectiveTarget = ResolveEffectiveTarget(server.Mode, configuredTarget, server.Players);
             if (effectiveTarget == 0)
+            {
+                await RemoveServerShapingAsync(port, "effective target resolved to 0", ct);
                 continue;
+            }
 
             foreach (var player in server.Players)
             {
@@ -119,6 +125,26 @@ public class LatencyController
                 _shapingState.Remove(key);
                 _logger.LogInformation("Player disconnected: {IP}:{Port}", ip, port);
             }
+        }
+    }
+
+    private async Task RemoveServerShapingAsync(uint port, string reason, CancellationToken ct)
+    {
+        foreach (var key in _shapingState.Keys.Where(k => k.EndsWith($":{port}", StringComparison.Ordinal)).ToList())
+        {
+            var idx = key.LastIndexOf(':');
+            if (idx <= 0)
+                continue;
+
+            var ip = key[..idx];
+            if (!await _tcCommands.RemoveShapingAsync(ip, port, ct))
+            {
+                _logger.LogWarning("Failed to remove shaping for {IP}:{Port} while {Reason}", ip, port, reason);
+                continue;
+            }
+
+            _shapingState.Remove(key);
+            _logger.LogInformation("Player {IP}:{Port} - Shaping removed ({Reason})", ip, port, reason);
         }
     }
 
