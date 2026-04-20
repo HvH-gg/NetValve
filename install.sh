@@ -4,10 +4,14 @@ set -euo pipefail
 # NetValve™ Installer & Setup
 # Usage: curl -fsSL https://netvalve.hvh.gg/install | sudo bash
 # Or with version: NETVALVE_VERSION=1.0.0 curl -fsSL https://netvalve.hvh.gg/install | sudo bash
+# Or from a local archive in the current directory:
+# NETVALVE_VERSION=1.0.0 sudo ./install.sh --local
 
 VERSION="${NETVALVE_VERSION:-latest}"
 REPO="${NETVALVE_REPO:-HvH-gg/NetValve}"
 INSTALL_DIR="/usr/local/bin/netvalve"
+USE_LOCAL_ARCHIVE=0
+LOCAL_ARCHIVE_DIR="$(pwd -P)"
 
 PACKAGE_MANAGER=""
 MICROSOFT_DISTRO=""
@@ -18,6 +22,36 @@ DOWNLOAD_URL=""
 DISPLAY_VERSION="debug"
 RELEASE_TAG_CANDIDATES=()
 TRIED_DOWNLOAD_URLS=()
+
+print_usage() {
+  echo "Usage: install.sh [--local] [--help]"
+  echo ""
+  echo "Options:"
+  echo "  --local   Install from ./netvalve-\${NETVALVE_VERSION}-linux-x64.tar.gz"
+  echo "            in the current directory instead of downloading from GitHub."
+  echo "  --help    Show this help message."
+}
+
+parse_args() {
+  while [ "$#" -gt 0 ]; do
+    case "$1" in
+      --local)
+        USE_LOCAL_ARCHIVE=1
+        ;;
+      -h|--help)
+        print_usage
+        exit 0
+        ;;
+      *)
+        echo "Unknown argument: $1" >&2
+        print_usage >&2
+        exit 1
+        ;;
+    esac
+
+    shift
+  done
+}
 
 normalize_version() {
   printf '%s' "${1#v}"
@@ -96,6 +130,18 @@ download_release_archive() {
   done
 
   return 1
+}
+
+copy_local_release_archive() {
+  local output_path="$1"
+  local archive_path="${LOCAL_ARCHIVE_DIR}/netvalve-${VERSION}-linux-x64.tar.gz"
+
+  if [ ! -f "$archive_path" ]; then
+    return 1
+  fi
+
+  cp "$archive_path" "$output_path"
+  DOWNLOAD_URL="$archive_path"
 }
 
 set_display_version() {
@@ -244,6 +290,8 @@ print_runtime_install_instructions() {
 }
 
 echo "NetValve™ Installer"
+parse_args "$@"
+
 echo "===================="
 echo ""
 
@@ -255,7 +303,9 @@ fi
 
 # Dependency check
 MISSING_DEPS=()
-command -v curl >/dev/null 2>&1 || MISSING_DEPS+=("curl")
+if [ "$USE_LOCAL_ARCHIVE" -ne 1 ]; then
+  command -v curl >/dev/null 2>&1 || MISSING_DEPS+=("curl")
+fi
 command -v tar >/dev/null 2>&1 || MISSING_DEPS+=("tar")
 command -v tc >/dev/null 2>&1 || MISSING_DEPS+=("tc")
 
@@ -291,7 +341,16 @@ if [[ ${#MISSING_DEPS[@]} -gt 0 ]]; then
 fi
 
 # Resolve requested release
-if [ "$VERSION" = "latest" ]; then
+if [ "$USE_LOCAL_ARCHIVE" -eq 1 ]; then
+  if [ "$VERSION" = "latest" ]; then
+    echo "Local archive mode requires NETVALVE_VERSION to be set."
+    echo "Example:"
+    echo "  NETVALVE_VERSION=1.0.0 sudo ./install.sh --local"
+    exit 1
+  fi
+
+  prepare_release_tag_candidates "$VERSION"
+elif [ "$VERSION" = "latest" ]; then
   echo "Resolving latest NetValve release from GitHub..."
   if ! resolve_latest_release; then
     echo "Failed to resolve the latest GitHub release for ${REPO}."
@@ -318,19 +377,31 @@ fi
 TMP_DIR=$(mktemp -d)
 cd "$TMP_DIR"
 
-if ! download_release_archive netvalve.tgz; then
-  echo "Failed to download NetValve release ${VERSION}."
-  echo "Check that the release exists and GitHub is accessible from this server."
-  echo ""
-  echo "Tried download URLs:"
-  for tried_url in "${TRIED_DOWNLOAD_URLS[@]}"; do
-    echo "  $tried_url"
-  done
-  rm -rf "$TMP_DIR"
-  exit 1
-fi
+if [ "$USE_LOCAL_ARCHIVE" -eq 1 ]; then
+  if ! copy_local_release_archive netvalve.tgz; then
+    echo "Failed to find local NetValve release ${VERSION}."
+    echo "Expected file:"
+    echo "  ${LOCAL_ARCHIVE_DIR}/netvalve-${VERSION}-linux-x64.tar.gz"
+    rm -rf "$TMP_DIR"
+    exit 1
+  fi
 
-echo "Downloading from: $DOWNLOAD_URL"
+  echo "Using local archive: $DOWNLOAD_URL"
+else
+  if ! download_release_archive netvalve.tgz; then
+    echo "Failed to download NetValve release ${VERSION}."
+    echo "Check that the release exists and GitHub is accessible from this server."
+    echo ""
+    echo "Tried download URLs:"
+    for tried_url in "${TRIED_DOWNLOAD_URLS[@]}"; do
+      echo "  $tried_url"
+    done
+    rm -rf "$TMP_DIR"
+    exit 1
+  fi
+
+  echo "Downloading from: $DOWNLOAD_URL"
+fi
 
 echo "Extracting NetValve..."
 mkdir -p "$INSTALL_DIR"
@@ -439,3 +510,5 @@ echo "  sudo systemctl restart netvalve-controller"
 echo ""
 echo "To reinstall or update, run:"
 echo "  curl -fsSL https://netvalve.hvh.gg/install | sudo bash"
+echo "Or from a local archive in the current directory:"
+echo "  NETVALVE_VERSION=${DISPLAY_VERSION} sudo ./install.sh --local"

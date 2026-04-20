@@ -128,9 +128,9 @@ https://learn.microsoft.com/en-us/dotnet/core/install/linux
 
 ### 1. Controller Service
 
-- Download `netvalve-X.Y.X-linux-x64.tar.gz` from [GitHub Releases](https://github.com/HvH-gg/NetValve/releases)
-- Extract to `/usr/local/bin/netvalve/`
-- Run `sudo ./netvalve/install.sh`
+- Copy `netvalve-X.Y.X-linux-x64.tar.gz` to the server
+- Extract it in a working directory on the server
+- Run `NETVALVE_VERSION=X.Y.X sudo ./install.sh --local` from that same directory
 - Start service: `sudo systemctl start netvalve-controller`
 
 ### 2. CS2 Plugin
