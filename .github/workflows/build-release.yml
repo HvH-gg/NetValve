@@ -10,11 +10,11 @@ on:
       version:
         description: 'Version to build (1.2.3 or v1.2.3)'
         required: true
-        default: '0.1.0'
+        default: '1.0.2'
 
 env:
   DOTNET_VERSION: '8.0.x'
-  DEFAULT_VERSION: '0.1.0'
+  DEFAULT_VERSION: '1.0.2'
 
 jobs:
   build-release:
@@ -50,7 +50,8 @@ jobs:
         run: |
           cp install.sh release/publish/
           cp netvalve-controller.service release/publish/
-          tar -czf netvalve-${{ steps.version.outputs.VERSION }}-linux-x64.tar.gz -C release/publish --owner=0 --group=0 .
+          cd release/publish
+          find . -mindepth 1 -maxdepth 1 -printf '%P\0' | sort -z | tar --null -T - -czf ../../netvalve-${{ steps.version.outputs.VERSION }}-linux-x64.tar.gz --owner=0 --group=0
 
       - name: Create Release
         uses: softprops/action-gh-release@v1

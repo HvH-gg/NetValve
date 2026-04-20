@@ -15,7 +15,7 @@ public class Plugin : BasePlugin, IPluginConfig<PluginConfig>
     private const string ModeRelaxed = "relaxed";
 
     public override string ModuleName => "NetValve™";
-    public override string ModuleVersion => "1.0.1";
+    public override string ModuleVersion => "1.0.2";
     public override string ModuleAuthor => "imi-tat0r";
     public PluginConfig Config { get; set; } = new();
 
