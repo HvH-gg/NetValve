@@ -1,5 +1,6 @@
 using System.Net.Http.Headers;
 using System.Net.WebSockets;
+using System.Security.Authentication;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -23,6 +24,7 @@ public sealed class SnapshotSender : IAsyncDisposable
     private ClientWebSocket? _ws;
     private Task? _pumpTask;
     private readonly JsonSerializerOptions _serializerOptions;
+    private int _loggedImplicitWsPath;
 
     public SnapshotSender(PluginConfig config, ILogger logger)
     {
@@ -110,6 +112,7 @@ public sealed class SnapshotSender : IAsyncDisposable
 
     private async Task ConnectWebSocketAsync(CancellationToken ct)
     {
+        Uri? uri = null;
         try
         {
             _ws?.Dispose();
@@ -119,14 +122,24 @@ public sealed class SnapshotSender : IAsyncDisposable
             if (!string.IsNullOrWhiteSpace(_config.ServerId))
                 _ws.Options.SetRequestHeader("X-Server-Id", _config.ServerId);
 
-            var uri = new Uri(_config.ControllerUrl);
+            uri = BuildControllerWebSocketUri();
             _logger.LogInformation("Connecting to NetValve controller at {Uri}", uri);
             await _ws.ConnectAsync(uri, ct);
             _logger.LogInformation("Connected to NetValve controller at {Uri}", uri);
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Failed to connect to controller WS");
+            if (uri is not null && IsLikelyTlsMismatch(uri, ex))
+            {
+                _logger.LogWarning(ex,
+                    "Failed to connect to controller WS at {Uri}. The controller appears to be speaking plain HTTP on this port. Use ws:// unless NetValve.Server Ingest.UseHttps is enabled with a certificate.",
+                    uri);
+            }
+            else
+            {
+                _logger.LogWarning(ex, "Failed to connect to controller WS at {Uri}", uri?.ToString() ?? _config.ControllerUrl);
+            }
+
             _ws?.Dispose();
             _ws = null;
         }
@@ -167,15 +180,17 @@ public sealed class SnapshotSender : IAsyncDisposable
         {
             var uri = !string.IsNullOrWhiteSpace(_config.HttpFallbackUrl)
                 ? _config.HttpFallbackUrl
-                : _config.ControllerUrl.Replace("ws", "http", StringComparison.OrdinalIgnoreCase).TrimEnd('/') + "/ingest/snapshot";
+                : BuildDefaultHttpFallbackUrl();
 
             using var req = new HttpRequestMessage(HttpMethod.Post, uri);
             req.Content = new StringContent(JsonSerializer.Serialize(snapshot, _serializerOptions), Encoding.UTF8, "application/json");
 
             if (!string.IsNullOrWhiteSpace(_config.AuthToken))
+            {
                 req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _config.AuthToken);
+                req.Headers.Add("X-Auth-Token", _config.AuthToken);
+            }
 
-            req.Headers.Add("X-Auth-Token", _config.AuthToken);
             if (!string.IsNullOrWhiteSpace(_config.ServerId))
                 req.Headers.Add("X-Server-Id", _config.ServerId);
 
@@ -189,5 +204,67 @@ public sealed class SnapshotSender : IAsyncDisposable
         {
             _logger.LogWarning(ex, "HTTP fallback send failed");
         }
+    }
+
+    private string BuildDefaultHttpFallbackUrl()
+    {
+        var controllerUri = new Uri(_config.ControllerUrl);
+        var builder = new UriBuilder(controllerUri)
+        {
+            Scheme = string.Equals(controllerUri.Scheme, "wss", StringComparison.OrdinalIgnoreCase)
+                ? Uri.UriSchemeHttps
+                : Uri.UriSchemeHttp,
+            Path = "/ingest/snapshot",
+            Query = string.Empty,
+            Fragment = string.Empty
+        };
+
+        return builder.Uri.ToString();
+    }
+
+    private Uri BuildControllerWebSocketUri()
+    {
+        var controllerUri = new Uri(_config.ControllerUrl);
+        if (!string.Equals(controllerUri.Scheme, Uri.UriSchemeWs, StringComparison.OrdinalIgnoreCase)
+            && !string.Equals(controllerUri.Scheme, "wss", StringComparison.OrdinalIgnoreCase))
+        {
+            return controllerUri;
+        }
+
+        if (!string.IsNullOrEmpty(controllerUri.AbsolutePath) && controllerUri.AbsolutePath != "/")
+            return controllerUri;
+
+        if (Interlocked.Exchange(ref _loggedImplicitWsPath, 1) == 0)
+        {
+            _logger.LogWarning(
+                "ControllerUrl {ControllerUrl} does not include a WebSocket path. Defaulting to /ws.",
+                _config.ControllerUrl);
+        }
+
+        var builder = new UriBuilder(controllerUri)
+        {
+            Path = "/ws"
+        };
+
+        return builder.Uri;
+    }
+
+    private static bool IsLikelyTlsMismatch(Uri uri, Exception ex)
+    {
+        if (!string.Equals(uri.Scheme, "wss", StringComparison.OrdinalIgnoreCase))
+            return false;
+
+        return FindException<AuthenticationException>(ex) is not null;
+    }
+
+    private static TException? FindException<TException>(Exception ex) where TException : Exception
+    {
+        for (Exception? current = ex; current is not null; current = current.InnerException)
+        {
+            if (current is TException match)
+                return match;
+        }
+
+        return null;
     }
 }
