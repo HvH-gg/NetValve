@@ -71,8 +71,9 @@ public class LatencyController
                     continue;
                 }
 
-                // Direct additive adjustment
-                var requestedDelta = (long)Math.Ceiling(diff);
+                // Direct additive adjustment. Delay is applied on both egress and ingress,
+                // so each direction gets half of the round-trip gap.
+                var requestedDelta = (long)Math.Ceiling(diff / 2);
                 var newDelay = (int)Math.Clamp((long)state.CurrentDelay + requestedDelta, 0L, int.MaxValue);
 
                 if (newDelay == state.CurrentDelay) 
