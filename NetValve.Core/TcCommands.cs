@@ -1,7 +1,5 @@
 using System.Diagnostics;
-using System.IO.Hashing;
 using NetValve.Core.Validation;
-using System.Text;
 using Microsoft.Extensions.Logging;
 using NetValve.Core.Models;
 
@@ -9,8 +7,17 @@ namespace NetValve.Core;
 
 public class TcCommands
 {
+    // Minor IDs double as netem qdisc majors, so 1 (root on dev), 2 (root on ifb)
+    // and 0xFFFF (ingress on dev) are reserved. Class minor 1 is the default class.
+    private const int FirstMinorId = 3;
+    private const int LastMinorId = 0xFFFE;
+
     private readonly ServerConfig _config;
     private readonly ILogger _logger;
+    private readonly object _minorIdLock = new();
+    private readonly Dictionary<string, int> _minorIds = new();
+    private readonly Queue<int> _freeMinorIds = new();
+    private int _nextMinorId = FirstMinorId;
     private bool _baseSetupReady;
 
     public TcCommands(ServerConfig config, ILogger logger)
@@ -76,7 +83,12 @@ public class TcCommands
             return false;
         }
 
-        var minor = GetMinorId(normalizedIp, port);
+        if (!TryAcquireMinorId(normalizedIp, port, out var minor))
+        {
+            _logger.LogError("No free TC class IDs left; skipping shaping for port {Port}", port);
+            return false;
+        }
+
         var filterHandle = minor.ToString();
 
         var cmds = new[]
@@ -100,7 +112,9 @@ public class TcCommands
         if (!TryGetValidatedDevices(out var dev, out var ifb) || !TryNormalizeShapingTarget(ip, port, out var normalizedIp))
             return false;
 
-        var minor = GetMinorId(normalizedIp, port);
+        if (!TryReleaseMinorId(normalizedIp, port, out var minor))
+            return true;
+
         var filterHandle = minor.ToString();
 
         var cmds = new[]
@@ -233,12 +247,36 @@ public class TcCommands
 
     private static string FormatCommand(CommandSpec cmd) => $"{cmd.FileName} {string.Join(' ', cmd.Arguments)}";
 
-    private static int GetMinorId(string ip, uint port)
+    private bool TryAcquireMinorId(string ip, uint port, out int minor)
     {
-        // CRC32-based deterministic 12-bit ID
-        var bytes = Encoding.UTF8.GetBytes($"{ip}:{port}");
-        var hash = Crc32.Hash(bytes);
-        return (BitConverter.ToInt32(hash, 0) & 0x0FFF) | 1;
+        var key = $"{ip}:{port}";
+
+        lock (_minorIdLock)
+        {
+            if (_minorIds.TryGetValue(key, out minor))
+                return true;
+
+            // Prefer never-used IDs; reuse freed ones only once the range is exhausted
+            if (_nextMinorId <= LastMinorId)
+                minor = _nextMinorId++;
+            else if (!_freeMinorIds.TryDequeue(out minor))
+                return false;
+
+            _minorIds[key] = minor;
+            return true;
+        }
+    }
+
+    private bool TryReleaseMinorId(string ip, uint port, out int minor)
+    {
+        lock (_minorIdLock)
+        {
+            if (!_minorIds.Remove($"{ip}:{port}", out minor))
+                return false;
+
+            _freeMinorIds.Enqueue(minor);
+            return true;
+        }
     }
 
     private sealed record CommandSpec(
