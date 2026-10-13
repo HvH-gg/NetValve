@@ -83,7 +83,7 @@ public class TcCommands
         {
             new CommandSpec("tc", ["class", "replace", "dev", dev, "parent", "1:1", "classid", $"1:{minor:x}", "htb", "rate", "1gbit", "ceil", "1gbit"]),
             new CommandSpec("tc", ["qdisc", "replace", "dev", dev, "parent", $"1:{minor:x}", "handle", $"{minor:x}:", "netem", "delay", $"{delayMs}ms"]),
-            new CommandSpec("tc", ["filter", "replace", "dev", dev, "protocol", "ip", "parent", "1:", "pref", "10", "handle", filterHandle, "flower", "skip_hw", "dst_ip", normalizedIp, "ip_proto", "udp", "dst_port", port.ToString(), "flowid", $"1:{minor:x}"]),
+            new CommandSpec("tc", ["filter", "replace", "dev", dev, "protocol", "ip", "parent", "1:", "pref", "10", "handle", filterHandle, "flower", "skip_hw", "dst_ip", normalizedIp, "ip_proto", "udp", "src_port", port.ToString(), "flowid", $"1:{minor:x}"]),
             new CommandSpec("tc", ["class", "replace", "dev", ifb, "parent", "2:1", "classid", $"2:{minor:x}", "htb", "rate", "1gbit", "ceil", "1gbit"]),
             new CommandSpec("tc", ["qdisc", "replace", "dev", ifb, "parent", $"2:{minor:x}", "handle", $"{minor:x}:", "netem", "delay", $"{delayMs}ms"]),
             new CommandSpec("tc", ["filter", "replace", "dev", ifb, "protocol", "ip", "parent", "2:", "pref", "10", "handle", filterHandle, "flower", "skip_hw", "src_ip", normalizedIp, "ip_proto", "udp", "dst_port", port.ToString(), "flowid", $"2:{minor:x}"])
