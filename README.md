@@ -47,8 +47,14 @@ Examples with target `20`:
 
 ### Multiple Servers Setup
 
-When the setup script asks how many CS2 servers to configure, enter the count you want to connect.
-For each server, set:
+The setup script asks how CS2 servers should authenticate:
+
+1. **Shared token** (default, recommended for many servers): one token for all servers. Every plugin uses the same config and is identified by its game port. See [Shared Binary / Auto ServerId Mode](#shared-binary--auto-serverid-mode).
+2. **Per-server**: a unique `ServerId` and token for each server.
+
+Leaving a token prompt empty auto-generates one. The script prints the resulting plugin config(s) at the end.
+
+In per-server mode, enter the count of servers you want to connect. For each server, set:
 
 - `ServerId` (unique)
 - `AuthToken`

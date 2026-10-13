@@ -1,5 +1,5 @@
 {
-  "ControllerUrl": "wss://controller:8443/ws",
+  "ControllerUrl": "ws://controller:8443/ws",
   "AuthToken": "your-auth-token",
   "ServerId": "server-1",
   "HttpFallbackUrl": null,

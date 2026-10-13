@@ -163,6 +163,10 @@ is_unsigned_integer() {
   esac
 }
 
+generate_token() {
+  head -c 24 /dev/urandom | od -An -tx1 | tr -d ' \n'
+}
+
 prompt_value() {
   local prompt="$1"
   local __resultvar="$2"
@@ -424,36 +428,58 @@ DEV=${DEV:-${DEFAULT_DEV:-eth0}}
 
 # Configure ingest servers
 echo ""
-echo "How many CS2 servers will send data to this controller?"
-prompt_value "> " SERVER_COUNT
-if ! is_unsigned_integer "$SERVER_COUNT" || [ "$SERVER_COUNT" -lt 1 ]; then
-  SERVER_COUNT=1
-fi
+echo "How should CS2 servers authenticate with this controller?"
+echo "  1) Shared token - one token for all servers, identified by game port (recommended for many servers)"
+echo "  2) Per-server   - unique ServerId + token for each server"
+prompt_value "> [1]: " AUTH_MODE
+case "${AUTH_MODE:-1}" in
+  2) AUTH_MODE="per-server" ;;
+  *) AUTH_MODE="shared" ;;
+esac
 
 INGEST_SERVERS_JSON=""
-i=1
-while [ "$i" -le "$SERVER_COUNT" ]; do
+SHARED_TOKEN=""
+CONFIGURED_SERVER_IDS=()
+CONFIGURED_TOKENS=()
+
+if [ "$AUTH_MODE" = "shared" ]; then
   echo ""
-  echo "Configuring server $i..."
-  prompt_value "Server ID (e.g., server-$i): " SERVER_ID
-  SERVER_ID=${SERVER_ID:-server-$i}
-  prompt_value "Auth Token (leave empty for no auth): " TOKEN
-  prompt_value "Server game port for TC shaping [optional]: " SERVER_PORT
-
-  if [ -n "$INGEST_SERVERS_JSON" ]; then
-    INGEST_SERVERS_JSON="$INGEST_SERVERS_JSON,"
+  prompt_value "Shared auth token [auto-generate]: " SHARED_TOKEN
+  SHARED_TOKEN=${SHARED_TOKEN:-$(generate_token)}
+  INGEST_SERVERS_JSON="{\"ServerId\":\"\",\"Token\":\"$SHARED_TOKEN\"}"
+else
+  echo ""
+  echo "How many CS2 servers will send data to this controller?"
+  prompt_value "> " SERVER_COUNT
+  if ! is_unsigned_integer "$SERVER_COUNT" || [ "$SERVER_COUNT" -lt 1 ]; then
+    SERVER_COUNT=1
   fi
 
-  INGEST_SERVERS_JSON="$INGEST_SERVERS_JSON{\"ServerId\":\"$SERVER_ID\""
-  if [ -n "$TOKEN" ]; then
-    INGEST_SERVERS_JSON="$INGEST_SERVERS_JSON,\"Token\":\"$TOKEN\""
-  fi
-  if is_unsigned_integer "$SERVER_PORT"; then
-    INGEST_SERVERS_JSON="$INGEST_SERVERS_JSON,\"Port\":$SERVER_PORT"
-  fi
-  INGEST_SERVERS_JSON="$INGEST_SERVERS_JSON}"
-  i=$((i + 1))
-done
+  i=1
+  while [ "$i" -le "$SERVER_COUNT" ]; do
+    echo ""
+    echo "Configuring server $i..."
+    prompt_value "Server ID [server-$i]: " SERVER_ID
+    SERVER_ID=${SERVER_ID:-server-$i}
+    prompt_value "Auth token [auto-generate]: " TOKEN
+    TOKEN=${TOKEN:-$(generate_token)}
+    prompt_value "Server game port for TC shaping [optional]: " SERVER_PORT
+
+    CONFIGURED_SERVER_IDS+=("$SERVER_ID")
+    CONFIGURED_TOKENS+=("$TOKEN")
+
+    if [ -n "$INGEST_SERVERS_JSON" ]; then
+      INGEST_SERVERS_JSON="$INGEST_SERVERS_JSON,"
+    fi
+
+    INGEST_SERVERS_JSON="$INGEST_SERVERS_JSON{\"ServerId\":\"$SERVER_ID\",\"Token\":\"$TOKEN\""
+    if is_unsigned_integer "$SERVER_PORT"; then
+      INGEST_SERVERS_JSON="$INGEST_SERVERS_JSON,\"Port\":$SERVER_PORT"
+    fi
+    INGEST_SERVERS_JSON="$INGEST_SERVERS_JSON}"
+    i=$((i + 1))
+  done
+fi
 
 # Create config
 mkdir -p /etc/netvalve
@@ -490,12 +516,25 @@ echo ""
 echo "   IMPORTANT: You might have to use the host's actual IP address instead of 127.0.0.1"
 echo "   Host IP: $HOST_IP"
 echo ""
-echo "2. Plugin config example for server 'server-1':"
-echo "   {"
-echo "     \"ControllerUrl\": \"ws://$HOST_IP:8443/ws\","
-echo "     \"AuthToken\": \"your-token\","
-echo "     \"ServerId\": \"server-1\""
-echo "   }"
+if [ "$AUTH_MODE" = "shared" ]; then
+  echo "2. Plugin config (use the same file on every CS2 server):"
+  echo "   {"
+  echo "     \"ControllerUrl\": \"ws://$HOST_IP:8443/ws\","
+  echo "     \"AuthToken\": \"$SHARED_TOKEN\","
+  echo "     \"ServerId\": \"\""
+  echo "   }"
+  echo "   Each server is identified by its game port (e.g. port-27015)."
+else
+  echo "2. Plugin config for each CS2 server:"
+  for idx in "${!CONFIGURED_SERVER_IDS[@]}"; do
+    echo "   ${CONFIGURED_SERVER_IDS[$idx]}:"
+    echo "   {"
+    echo "     \"ControllerUrl\": \"ws://$HOST_IP:8443/ws\","
+    echo "     \"AuthToken\": \"${CONFIGURED_TOKENS[$idx]}\","
+    echo "     \"ServerId\": \"${CONFIGURED_SERVER_IDS[$idx]}\""
+    echo "   }"
+  done
+fi
 echo ""
 echo "3. After the plugin is loaded on a CS2 server, set runtime cvars in the server console or cfg:"
 echo "   netvalve_targetping 50"
@@ -505,8 +544,12 @@ echo "4. Start the service: sudo systemctl start netvalve-controller"
 echo "5. Check status: sudo systemctl status netvalve-controller"
 echo "6. View logs: sudo journalctl -u netvalve-controller -f"
 echo ""
-echo "To add more servers later, edit /etc/netvalve/config.json and restart:"
-echo "  sudo systemctl restart netvalve-controller"
+if [ "$AUTH_MODE" = "shared" ]; then
+  echo "To add more servers later, install the plugin with the same config. No controller changes needed."
+else
+  echo "To add more servers later, edit /etc/netvalve/config.json and restart:"
+  echo "  sudo systemctl restart netvalve-controller"
+fi
 echo ""
 echo "To reinstall or update, run:"
 echo "  curl -fsSL https://netvalve.hvh.gg/install | sudo bash"
