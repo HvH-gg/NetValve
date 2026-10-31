@@ -46,7 +46,7 @@ public class LatencyExporter
             if (string.IsNullOrEmpty(ip)) continue;
 
             var state = _playerManager.TryEnsureState(player);
-            var pingMs = state.PingMs > 0 ? state.PingMs : player.Ping;
+            var pingMs = state.PingMs > 0 ? state.PingMs : _playerManager.GetPing(player);
 
             playersOut.Add(new PlayerOut { Ip = ip, Ping = pingMs });
         }
