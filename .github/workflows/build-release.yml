@@ -94,6 +94,7 @@ jobs:
           mkdir -p release/addons/counterstrikesharp/configs/plugins/NetValve
           mkdir -p release/addons/counterstrikesharp/gamedata
           cp -r NetValve.Plugin/bin/Release/net8.0/* release/addons/counterstrikesharp/plugins/NetValve/
+          cp NetValve.Plugin/gamedata/netvalve.json release/addons/counterstrikesharp/gamedata/
 
       - name: Create plugin config example
         run: |

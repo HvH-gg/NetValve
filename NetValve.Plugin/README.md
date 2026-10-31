@@ -22,6 +22,7 @@ Download the latest plugin from [GitHub Releases](https://github.com/HvH-gg/NetV
 1. Extract the ZIP file to your CS2 server's `addons/counterstrikesharp/` directory
 2. The plugin will be at `addons/counterstrikesharp/plugins/NetValve/`
 3. The example config will be at `addons/counterstrikesharp/configs/plugins/NetValve/NetValve.json`
+4. Gamedata (signatures/offsets for reading ping from the net channel) will be at `addons/counterstrikesharp/gamedata/netvalve.json`. If it is missing or outdated, the plugin falls back to `m_iPing`.
 4. Edit the config to set your controller URL, token, and server ID
 5. Restart your server or reload the plugin
 

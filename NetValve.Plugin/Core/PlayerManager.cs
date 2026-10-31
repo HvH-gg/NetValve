@@ -7,8 +7,15 @@ namespace NetValve.Plugin.Core;
 public class PlayerManager
 {
     private readonly Dictionary<ulong, PlayerState> _players = new();
+    private readonly NetChannelPing _netChannelPing;
     public IReadOnlyCollection<PlayerState> TrackedPlayers => _players.Values;
     public int PlayerCount => _players.Count;
+    public bool NetChannelPingAvailable => _netChannelPing.Available;
+
+    public PlayerManager(NetChannelPing netChannelPing)
+    {
+        _netChannelPing = netChannelPing;
+    }
 
     public void OnTick()
     {
@@ -24,8 +31,9 @@ public class PlayerManager
             if (!string.IsNullOrEmpty(ip) && ip != state.Ip)
                 state.Ip = ip;
             
-            if (player.Ping > 0)
-                state.PingMs = player.Ping;
+            var ping = GetPing(player);
+            if (ping > 0)
+                state.PingMs = ping;
 
             var name = player.PlayerName;
             if (!string.IsNullOrEmpty(name) && name != state.Name)
@@ -56,11 +64,19 @@ public class PlayerManager
             SteamId = steamId,
             Name = player.PlayerName,
             Ip = SafeGetIp(player),
-            PingMs = player.Ping
+            PingMs = GetPing(player)
         };
         
         _players[steamId] = state;
         return state;
+    }
+
+    /// <summary>
+    /// net channel latency first (not affected by m_iPing overrides), m_iPing as fallback.
+    /// </summary>
+    public uint GetPing(CCSPlayerController player)
+    {
+        return _netChannelPing.GetPing(player) ?? player.Ping;
     }
 
     public static string SafeGetIp(CCSPlayerController player)

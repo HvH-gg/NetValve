@@ -42,7 +42,7 @@ public class Plugin : BasePlugin, IPluginConfig<PluginConfig>
     {
         base.Load(hotReload);
 
-        _playerManager = new PlayerManager();
+        _playerManager = new PlayerManager(new NetChannelPing(Logger));
         _sender = new SnapshotSender(Config, Logger);
         _exporter = new LatencyExporter(_playerManager, _sender, Config, Logger);
 
@@ -123,6 +123,7 @@ public class Plugin : BasePlugin, IPluginConfig<PluginConfig>
         info.ReplyToCommand($"  Target ping: {(targetPing > 0 ? $"{targetPing}ms" : "off")}");
         info.ReplyToCommand($"  Ping mode: {targetMode}");
         info.ReplyToCommand($"  Tracked players: {_playerManager.PlayerCount}");
+        info.ReplyToCommand($"  Ping source: {(_playerManager.NetChannelPingAvailable ? "net channel" : "m_iPing")}");
         info.ReplyToCommand($"  Controller URL: {Config.ControllerUrl}");
     }
 
