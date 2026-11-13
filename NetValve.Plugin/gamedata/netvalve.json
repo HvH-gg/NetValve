@@ -1,0 +1,15 @@
+{
+  "NetValve_GetNetChannelBySlot": {
+    "signatures": {
+      "library": "server",
+      "windows": "48 89 5C 24 ? 57 48 83 EC ? 8B D9 E8",
+      "linux": "55 48 89 E5 41 54 53 89 FB E8 ? ? ? ? 48 85 C0 0F 84 ? ? ? ? 8B 90"
+    }
+  },
+  "NetValve_INetChannelInfo_GetAvgLatency": {
+    "offsets": {
+      "windows": 10,
+      "linux": 10
+    }
+  }
+}

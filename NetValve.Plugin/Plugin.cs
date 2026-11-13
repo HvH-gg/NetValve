@@ -15,7 +15,7 @@ public class Plugin : BasePlugin, IPluginConfig<PluginConfig>
     private const string ModeRelaxed = "relaxed";
 
     public override string ModuleName => "NetValve™";
-    public override string ModuleVersion => "1.0.6";
+    public override string ModuleVersion => "1.1.0-rc1";
     public override string ModuleAuthor => "imi-tat0r";
     public PluginConfig Config { get; set; } = new();
 
@@ -42,7 +42,7 @@ public class Plugin : BasePlugin, IPluginConfig<PluginConfig>
     {
         base.Load(hotReload);
 
-        _playerManager = new PlayerManager();
+        _playerManager = new PlayerManager(new NetChannelPing(Logger));
         _sender = new SnapshotSender(Config, Logger);
         _exporter = new LatencyExporter(_playerManager, _sender, Config, Logger);
 
@@ -123,6 +123,7 @@ public class Plugin : BasePlugin, IPluginConfig<PluginConfig>
         info.ReplyToCommand($"  Target ping: {(targetPing > 0 ? $"{targetPing}ms" : "off")}");
         info.ReplyToCommand($"  Ping mode: {targetMode}");
         info.ReplyToCommand($"  Tracked players: {_playerManager.PlayerCount}");
+        info.ReplyToCommand($"  Ping source: {(_playerManager.NetChannelPingAvailable ? "net channel" : "m_iPing")}");
         info.ReplyToCommand($"  Controller URL: {Config.ControllerUrl}");
     }
 

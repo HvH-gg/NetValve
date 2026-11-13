@@ -21,6 +21,8 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.version.outputs.VERSION }}
+      numeric_version: ${{ steps.version.outputs.NUMERIC_VERSION }}
+      prerelease: ${{ steps.version.outputs.PRERELEASE }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -39,12 +41,20 @@ jobs:
             RAW_VERSION="${GITHUB_REF_NAME}"
           fi
 
-          echo "VERSION=${RAW_VERSION#v}" >> $GITHUB_OUTPUT
+          VERSION="${RAW_VERSION#v}"
+          # AssemblyVersion/FileVersion must be numeric; strip prerelease suffix (1.1.0-rc1 -> 1.1.0)
+          NUMERIC_VERSION="${VERSION%%-*}"
+          if [ "$VERSION" != "$NUMERIC_VERSION" ]; then PRERELEASE=true; else PRERELEASE=false; fi
+
+          echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
+          echo "NUMERIC_VERSION=$NUMERIC_VERSION" >> $GITHUB_OUTPUT
+          echo "PRERELEASE=$PRERELEASE" >> $GITHUB_OUTPUT
 
       - name: Publish NetValve.Server
         run: |
           VERSION="${{ steps.version.outputs.VERSION }}"
-          dotnet publish NetValve.Server/NetValve.Server.csproj -c Release -r linux-x64 --self-contained false -o release/publish -p:Version=$VERSION -p:AssemblyVersion=$VERSION -p:FileVersion=$VERSION -p:DebugSymbols=false -p:DebugType=None
+          NUMERIC_VERSION="${{ steps.version.outputs.NUMERIC_VERSION }}"
+          dotnet publish NetValve.Server/NetValve.Server.csproj -c Release -r linux-x64 --self-contained false -o release/publish -p:Version=$VERSION -p:AssemblyVersion=$NUMERIC_VERSION -p:FileVersion=$NUMERIC_VERSION -p:DebugSymbols=false -p:DebugType=None
 
       - name: Create server release archive
         run: |
@@ -59,6 +69,7 @@ jobs:
         with:
           files: netvalve-${{ steps.version.outputs.VERSION }}-linux-x64.tar.gz
           generate_release_notes: true
+          prerelease: ${{ steps.version.outputs.PRERELEASE == 'true' }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -86,7 +97,8 @@ jobs:
       - name: Build NetValve.Plugin
         run: |
           VERSION="${{ needs.build-release.outputs.version }}"
-          dotnet build NetValve.Plugin/NetValve.Plugin.csproj -c Release --no-restore /p:Version=$VERSION /p:AssemblyVersion=$VERSION /p:FileVersion=$VERSION
+          NUMERIC_VERSION="${{ needs.build-release.outputs.numeric_version }}"
+          dotnet build NetValve.Plugin/NetValve.Plugin.csproj -c Release --no-restore /p:Version=$VERSION /p:AssemblyVersion=$NUMERIC_VERSION /p:FileVersion=$NUMERIC_VERSION
 
       - name: Create plugin directory structure
         run: |
@@ -94,6 +106,7 @@ jobs:
           mkdir -p release/addons/counterstrikesharp/configs/plugins/NetValve
           mkdir -p release/addons/counterstrikesharp/gamedata
           cp -r NetValve.Plugin/bin/Release/net8.0/* release/addons/counterstrikesharp/plugins/NetValve/
+          cp NetValve.Plugin/gamedata/netvalve.json release/addons/counterstrikesharp/gamedata/
 
       - name: Create plugin config example
         run: |
@@ -109,6 +122,7 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/')
         with:
           files: NetValve.Plugin-${{ needs.build-release.outputs.version }}.zip
+          prerelease: ${{ needs.build-release.outputs.prerelease == 'true' }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
